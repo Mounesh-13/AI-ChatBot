@@ -28,6 +28,43 @@ if not GEMINI_API_KEY.startswith("AIzaSy"):
 app = Flask(__name__)
 app.config['ENV'] = 'production'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max request size
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+# Add CORS support
+from flask_cors import CORS
+CORS(app)
+
+# Add error handling for production
+@app.errorhandler(500)
+def internal_server_error(e):
+    return jsonify(error=str(e)), 500
+
+@app.errorhandler(404)
+def not_found_error(e):
+    return jsonify(error='Not Found'), 404
+
+@app.errorhandler(400)
+def bad_request_error(e):
+    return jsonify(error=str(e)), 400
+
+# Add health check endpoint
+@app.route('/health')
+def health_check():
+    return jsonify(status='healthy'), 200
+
+# Add startup check
+@app.before_first_request
+def startup_check():
+    try:
+        # Test API connection
+        models = genai.list_models()
+        if not models:
+            logger.error("No models found in Gemini API")
+        else:
+            logger.info("Successfully connected to Gemini API")
+    except Exception as e:
+        logger.error(f"Startup check failed: {str(e)}")
+        raise e
 
 # Configure Gemini
 genai.configure(api_key=GEMINI_API_KEY)
@@ -149,5 +186,9 @@ def chat():
         }), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    try:
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except Exception as e:
+        logger.error(f"Application failed to start: {str(e)}")
+        raise e
